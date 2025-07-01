@@ -66,7 +66,7 @@ for dt in np.array([.01,.1,.2]):
     print('TTM(1)')
     T = TTMT1(kappa,dt)
     U = T2U(U[:1],T,stop,mitigate=True)
-    plot(U,dt,ax,'orange',r'$\text{TTM}^{(1)}$')
+    plot(U,dt,ax,'orange','TTM(1)')
 
     # TTM from kernel
     print('TTM(2)')
@@ -74,7 +74,7 @@ for dt in np.array([.01,.1,.2]):
     T[1] += dt**3/6*dddU0
     T[2:] += dt**3/2*F[::itv][1:M-1]
     U = T2U(U[:1],T,stop,mitigate=True)
-    plot(U,dt,ax,'green',r'$\text{TTM}^{(2)}$')
+    plot(U,dt,ax,'green','TTM(2)')
 
 
     # midpoint from kernel
