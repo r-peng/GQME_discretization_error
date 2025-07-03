@@ -18,17 +18,20 @@ delta = -1.0
 def H(t):
     return eps*sz + delta*sx
 
-dt = 0.0001
+dt = 0.0005
 dt_run = 0.0001
 itv = int(dt/dt_run+1e-6)
+print(itv)
 
 M = int(3./dt+1e-6)
+print(M)
 rhos = [None] * 4
 for i in range(4):
     f = h5py.File(f'long_path{i}.hdf5', 'r')
     rhos[i] = process_trajectory(f['rho'][:][::itv][:M])
     f.close()
 Us = rho2U(rhos)
+Us = np.array(Us,dtype=np.complex256)
 
 kappa = compute_kernel(Us,  H(0), dt, every=1000)
 np.save(f'kappa_{dt}_4th.npy',kappa)

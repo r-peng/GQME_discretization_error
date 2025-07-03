@@ -27,7 +27,7 @@ ylabs = 'Re'+r'$\mathcal{K}_{01,00}$',\
         r'$\log_{10}||\Delta\mathcal{K}||$',
 figs = [plt.subplots(nrows=1,ncols=1) for _ in range(5)]
 
-def plot(x,K,ls,c,l=None,mk=None,mksz=None,itv=1,kappa=None):
+def plot(x,K,ls,c,mk=None,mksz=None,itv=1,kappa=None):
     for (ix1,ix2,typ),(fig,ax) in zip(fnames,figs):
         mksz = 10 
         if typ=='real':
@@ -41,7 +41,7 @@ def plot(x,K,ls,c,l=None,mk=None,mksz=None,itv=1,kappa=None):
             y = np.array([np.linalg.norm(dKi) for dKi in dK])
             y = np.log10(y)
             mksz = 5
-        ax.plot(x[::itv],y[::itv],linestyle=ls,color=c,marker=mk,markersize=mksz,label=l)
+        ax.plot(x[::itv],y[::itv],linestyle=ls,color=c,marker=mk,markersize=mksz)
 
 # check kernel
 kappa = np.load(dir_+f'kappa_{dt_min}_4th.npy')
@@ -50,7 +50,11 @@ F = np.load(dir_+f'F_{dt_min}_4th.npy')
 #F = np.load(dir_+'B2_0.0005_4th.npy')
 x = np.arange(M)*dt_min
 print(x[-1])
-plot(x,-kappa[:M],'-','k',l='exact')
+plot(x,-kappa[:M],'-','k')
+fig,ax = figs[-1]
+for dat,ls,l in zip((kappa,F),('-','--'),(r'$||\mathcal{K}||$',r'$||\mathcal{F}||$')):
+    y = np.array([np.linalg.norm(ki) for ki in dat])
+    ax.plot(x,np.log10(y),linestyle=ls,color='k',label=l)
 
 eps = 0.0
 delta = -1.0
@@ -71,20 +75,18 @@ for dt,color in zip((0.01,0.05,0.1),colors):
     U = Uex[::itv]
     T,_ = U2T(U)
 
-    # TTM w/ F correction
-    K = TTMK1(T,dt)
-    K[0] -= dt*dddU0/3
-    K[1:] -= dt*F[::itv][1:K.shape[0]]/2
-    itv_ = 3 if dt<0.02 else 1
-    x = np.arange(K.shape[0])*dt
-    l = r'$\Omega\Delta t=$'+str(dt)
-    plot(x,K,'-',color,l,mk='o',itv=itv_,kappa=kappa[::itv])
-
-    # TTM
+    # TTM(1) 
     K = TTMK1(T,dt)
     itv_ = 3 if dt<0.02 else 1
     x = np.arange(K.shape[0])*dt
     plot(x,K,'--',color,mk='v',itv=itv_,kappa=kappa[::itv])
+
+    # TTM(2)
+    K[0] -= dt*dddU0/3
+    K[1:] -= dt*F[::itv][1:K.shape[0]]/2
+    itv_ = 3 if dt<0.02 else 1
+    x = np.arange(K.shape[0])*dt
+    plot(x,K,'-',color,mk='o',itv=itv_,kappa=kappa[::itv])
 
     # midpoint
     G1 = scipy.linalg.expm(-1j*dt*Ls)
@@ -108,13 +110,27 @@ for dt,color in zip((0.01,0.05,0.1),colors):
     plot(x,-K,':',color,mk='+',itv=itv_,kappa=kappa[::itv])
 
 for (ix1,ix2,typ),(fig,ax),ylab in zip(fnames,figs,ylabs):
+    for l,mk,ls in zip(('exact','TTM(1)','TTM(2)','MPD/I'),(None,'v','o','+'),('-','--','-',':')):
+        if typ=='err':
+            if l=='exact':
+                continue
+            else:
+                mksz = 5
+        else:
+            mksz = 10
+        ax.plot([],[],linestyle=ls,color='k',marker=mk,markersize=mksz,label=l)
     ax.set_xlabel(r'$\Omega t$')
     ax.set_ylabel(ylab)
-    #ax.set_xlim(0,0.5)
+    if typ=='err':
+        ax.set_xlim(0,2.5)
+    else:
+        ax.set_xlim(0,.5)
     ax.legend()
     fig.subplots_adjust(left=0.17, bottom=0.15, right=0.95, top=0.98)
     if typ=='err':
         fig.savefig(f'K_{typ}_{dt_min}.png', dpi=250)
+        #fig.savefig(f'K_{typ}.png', dpi=250)
     else:
         fig.savefig(f'K{ix1}{ix2}_{typ}_{dt_min}.png', dpi=250)
+        #fig.savefig(f'K{ix1}{ix2}_{typ}.png', dpi=250)
     plt.close(fig)

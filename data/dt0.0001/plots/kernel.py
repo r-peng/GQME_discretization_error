@@ -7,7 +7,7 @@ np.set_printoptions(threshold=10000,suppress=True,linewidth=10000)
 plt.rcParams.update({'font.size':16})
 plt.rcParams.update({'figure.figsize':(6.4,4.8)})
 
-dt_min = .0001
+dt_min = .0005
 itv = int(dt_min/.0001+1e-6)
 M = int(3/dt_min+1e-6) 
 rhos_ex = [None] * 4
