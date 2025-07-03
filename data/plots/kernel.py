@@ -7,14 +7,15 @@ np.set_printoptions(threshold=10000,suppress=True,linewidth=10000)
 plt.rcParams.update({'font.size':16})
 plt.rcParams.update({'figure.figsize':(6.4,4.8)})
 
-M = int(1/.0005+1e-6) 
+dt_min = .005
+itv = int(dt_min/.0005+1e-6)
+M = int(3/dt_min+1e-6) 
 rhos_ex = [None] * 4
 dir_ = '../heom_run/'
 for i in range(4):
     f = h5py.File(dir_+f'long_path{i}.hdf5', 'r')
-    rhos_ex[i] = process_trajectory(f['rho'][:][:M])
+    rhos_ex[i] = process_trajectory(f['rho'][:][::itv][:M])
     f.close()
-
 Uex = rho2U(rhos_ex)
 
 colors = 'blue','orange','green','red','cyan'
@@ -28,6 +29,7 @@ figs = [plt.subplots(nrows=1,ncols=1) for _ in range(5)]
 
 def plot(x,K,ls,c,l=None,mk=None,mksz=None,itv=1,kappa=None):
     for (ix1,ix2,typ),(fig,ax) in zip(fnames,figs):
+        mksz = 10 
         if typ=='real':
             y = K[:,ix1,ix2].real 
         elif typ=='imag':
@@ -38,13 +40,15 @@ def plot(x,K,ls,c,l=None,mk=None,mksz=None,itv=1,kappa=None):
             dK = K+kappa[:K.shape[0]]
             y = np.array([np.linalg.norm(dKi) for dKi in dK])
             y = np.log10(y)
-        ax.plot(x[::itv],y[::itv],linestyle=ls,color=c,marker=mk,markersize=5,label=l)
+            mksz = 5
+        ax.plot(x[::itv],y[::itv],linestyle=ls,color=c,marker=mk,markersize=mksz,label=l)
 
 # check kernel
-kappa = np.load(dir_+'kappa_0.0005_4th.npy')
-dddU0 = np.load(dir_+'dddU0_0.0005_4th.npy')
-F = np.load(dir_+'F_0.0005_4th.npy')
-x = np.arange(M)*0.0005
+kappa = np.load(dir_+f'kappa_{dt_min}_4th.npy')
+dddU0 = np.load(dir_+f'dddU0_{dt_min}_4th.npy')
+F = np.load(dir_+f'F_{dt_min}_4th.npy')
+#F = np.load(dir_+'B2_0.0005_4th.npy')
+x = np.arange(M)*dt_min
 print(x[-1])
 plot(x,-kappa[:M],'-','k',l='exact')
 
@@ -62,8 +66,8 @@ def TTMK1(T,dt):
     K[0] += np.dot(Ls,Ls)
     return K
 for dt,color in zip((0.01,0.05,0.1),colors):
-    print('dt=',dt)
-    itv = int(dt/0.0005+1e-6)
+    itv = int(dt/dt_min+1e-6)
+    print('dt=',dt,itv)
     U = Uex[::itv]
     T,_ = U2T(U)
 
@@ -106,11 +110,11 @@ for dt,color in zip((0.01,0.05,0.1),colors):
 for (ix1,ix2,typ),(fig,ax),ylab in zip(fnames,figs,ylabs):
     ax.set_xlabel(r'$\Omega t$')
     ax.set_ylabel(ylab)
-    ax.set_xlim(0,0.5)
+    #ax.set_xlim(0,0.5)
     ax.legend()
     fig.subplots_adjust(left=0.17, bottom=0.15, right=0.95, top=0.98)
     if typ=='err':
-        fig.savefig(f'K_{typ}.png', dpi=250)
+        fig.savefig(f'K_{typ}_{dt_min}.png', dpi=250)
     else:
-        fig.savefig(f'K{ix1}{ix2}_{typ}.png', dpi=250)
+        fig.savefig(f'K{ix1}{ix2}_{typ}_{dt_min}.png', dpi=250)
     plt.close(fig)
