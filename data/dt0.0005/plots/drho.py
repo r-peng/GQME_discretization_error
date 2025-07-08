@@ -96,7 +96,7 @@ for dt,color in zip([0.005,.01,0.02,.05,.1,.2],colors):
 
 for ax,fig in zip((ax1,ax2,ax3,ax4),(fig1,fig2,fig3,fig4)):
     ax.set_xlabel(r'$\Omega t$')
-    ax.set_ylabel(r'$\log_{10}(||\Delta\rho||)$')
+    ax.set_ylabel(r'$\log_{10}||\Delta\rho||$')
     ax.set_ylim(-7,-.5)
     ax.set_xlim(0,10)
     ax.legend()

@@ -107,6 +107,8 @@ for dt in np.array([.01,.1,.2]):
     ax.set_ylabel(r'$\rho$')
     ax.set_ylim(-.05,1.05)
     ax.set_xlim(0,10)
+    ax.yaxis.set_ticks_position('both')
+    ax.tick_params(axis='y', which='both', direction='in', right=True)
     ax.legend()
     fig.subplots_adjust(left=0.12, bottom=0.12, right=0.97, top=0.98)
     fig.savefig(f'rho_{dt}.png', dpi=250)
