@@ -103,7 +103,7 @@ for dt in np.array([.01,.1,.2]):
     U = T2U_MPDI(U0,T,G1,stop,mitigate=False,check=False)
     plot(U,dt,ax,'y','MPD/I')
 
-    ax.set_xlabel(r'$\Omega t$')
+    ax.set_xlabel(r'$t$')
     ax.set_ylabel(r'$\rho$')
     ax.set_ylim(-.05,1.05)
     ax.set_xlim(0,10)

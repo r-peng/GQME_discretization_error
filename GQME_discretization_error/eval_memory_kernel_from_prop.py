@@ -79,12 +79,14 @@ def compute_B2(kappa,Hs,dt):
         B[i] += np.dot(Ls,kappa[i])
     return B
 
-def compute_kernel(Us, Hs, dt,every=None):
+def compute_kernel(Us, Hs, dt,Usd=None,Usdd=None,every=None):
     Ls = -1.0j*commutator(Hs)
-    print('computing derivative...')
-    Usd = compute_derivative(Us, dt)
-    print('computing second derivative...')
-    Usdd = compute_second_derivative(Us, dt)
+    if Usd is None:
+        print('computing derivative...')
+        Usd = compute_derivative(Us, dt)
+    if Usdd is None:
+        print('computing second derivative...')
+        Usdd = compute_second_derivative(Us, dt)
 
     print('computing kernel...')
     kappa = np.zeros_like(Us)

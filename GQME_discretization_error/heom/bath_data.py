@@ -34,6 +34,8 @@ def setup_heom_correlation_functions(Sw, Z1, nmax = 500, aaa_tol = 1e-4):
     #and convert that to the heom correlation function coefficients
     dk, zk = AAA_to_HEOM(p, r)
 
+    print(dk, zk)
+
     #return the function for optional plotting as well as the coefficients
     return func1, dk, zk
 

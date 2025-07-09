@@ -1,5 +1,6 @@
 import numpy as np
 from .mps_utils import *
+from .mpo import *
 
 
 #a basic shared memory mps implementation.  This contains a number 
@@ -7,6 +8,8 @@ class mps:
     #construct from array of bond dimensions and local hilbert space dimensions
     def __init__(self, chi = None, d = None, N = None, chil : int = 1, chir : int = 1, dtype = np.double, init = 'zeros', do_orthog=True):
         self.dtype = dtype 
+
+
         if isinstance(chi, (np.ndarray, list)) and isinstance(d, (np.ndarray, list)):
             self.build_from_arrays(chi, d, chil = chil, chir = chir, dtype = dtype, init = init, do_orthog=do_orthog)
         elif isinstance(chi, int) and isinstance(d, (np.ndarray, list)):
@@ -21,13 +24,12 @@ class mps:
             if N == None:
                 self._tensors = None
                 self._is_valid = False
-                self._boundary_vects = None
                 self._orth_centre = None
             else:
                 chi_arr = np.ones(N-1, dtype=int)*chi
                 d_arr = np.ones(N, dtype=int)*d
                 self.build_from_arrays(chi_arr, d_arr, chil = chil, chir = chir, dtype = dtype, init = init, do_orthog=do_orthog)
-
+        
         self._is_conjugated = False
 
     def build_from_arrays(self, chi, d, chil = 1, chir = 1, dtype = np.double, init = 'zeros', do_orthog=True):
@@ -55,10 +57,9 @@ class mps:
 
         self._orth_centre = None
         self._is_valid = True
-        self._boundary_vects = None
         self.init_values(dtype=dtype, init=init, do_orthog=do_orthog)
 
-    def init_values(self, dtype = np.double, init='zeros', do_orthog=True):
+    def init_values(self, dtype = np.double, init='zeros', do_orthog=True, sf = 1):
         if isinstance(init, str):
             if init == 'zeros':
                 for A in self._tensors:
@@ -75,7 +76,7 @@ class mps:
                     for i in reversed(range(self.nbonds())):
                         self.shift_bond(i, dir='left')
                         norm = np.dot(np.conj(self._tensors[i].flatten()), self._tensors[i].flatten())
-                        self._tensors[i] /= np.sqrt(norm)
+                        self._tensors[i] /= (np.sqrt(norm)*sf)
 
                     self._orth_centre = 0
                     
@@ -154,7 +155,6 @@ class mps:
         ret = mps()
         ret._tensors = self._tensors
         ret._orth_centre = self._orth_centre
-        ret._boundary_vects = self._boundary_vects
         ret._is_valid = self._is_valid
         ret._is_conjugated = not self._is_conjugated
         return ret
@@ -233,6 +233,7 @@ class mps:
                         npad = chi - chir
                         self._tensors[i+1] = np.pad(self._tensors[i+1], ((0,npad), (0, 0), (0,0) ), 'constant', constant_values=(0))
             self._is_valid = True
+        self.truncate(nbond=self.maximum_bond_dimension())
 
 
     #function for ensuring that the mps is currently valid
@@ -263,24 +264,40 @@ class mps:
 
         if i < self._orth_centre:
             for bi in reversed(range(i, self._orth_centre)):
-                self.shift_left(tol = tol, nbond = nbond)
+                nb = None
+                if isinstance(nbond, (list, np.ndarray)):
+                    nb = nbond[bi]
+                else:
+                    nb = nbond
+                self.shift_left(tol = tol, nbond = nb)
 
         elif i > self._orth_centre:
             for bi in range(self._orth_centre, i):
-                self.shift_right(tol = tol, nbond = nbond)
+                nb = None
+                if isinstance(nbond, (list, np.ndarray)):
+                    nb = nbond[bi]
+                else:
+                    nb = nbond
+                self.shift_right(tol = tol, nbond = nb)
 
         if(i != self._orth_centre):
             raise RuntimError("the orthogonality centre has not been shifted to the correct position.")
 
-
-    def normalise(self):
+    def norm(self):
         norm = None
         if(self._orth_centre != None):
             oc = self._orth_centre
             norm = np.dot(np.conj(self._tensors[oc].flatten()), self._tensors[oc].flatten())
+        else:
+            norm = mps.overlap(self.conj(), self)
+        return norm
+
+    def normalise(self):
+        norm = self.norm()
+        if(self._orth_centre != None):
+            oc = self._orth_centre
             self._tensors[oc] /= np.sqrt(norm)
         else:
-            norm = contract(self, self)
             self._tensors[0] /= np.sqrt(norm)
         return norm
 
@@ -355,6 +372,25 @@ class mps:
 
     #updates the MPS so that the site tensors are isometries and return the non-orthogonal bond matrix
     def schmidt_decomposition(self, dir, tol=None, nbond=None, chimin=None):
+        if self._orth_centre == None:
+            raise RuntimeError("The schmidt decomposition function requires the MPS to be in a mixed canonical form.")
+        if (self._orth_centre == 0 and dir  == 'left') or (self._orth_centre + 1 == len(self) and dir == 'right'):
+            raise RuntimeError("Unable to perform specified decomposition we are at the bounds of the MPS.")
+        
+        bind = None
+        if dir == 'left':
+            bind = self._orth_centre-1
+        else:
+            bind = self._orth_centre
+
+        il = bind
+        ir = bind+1
+        
+        self._tensors[il], R, self._tensors[ir] = local_canonical_form(self._tensors[il], self._tensors[ir], dir, il, self._orth_centre, tol = tol, nbond = nbond, chimin = chimin)
+        return R
+
+    #updates the MPS so that the site tensors are isometries and return the non-orthogonal bond matrix
+    def schmidt_spectrum(self, dir, tol=None, nbond=None, chimin=None):
         if self._orth_centre == None:
             raise RuntimeError("The schmidt decomposition function requires the MPS to be in a mixed canonical form.")
         if (self._orth_centre == 0 and dir  == 'left') or (self._orth_centre + 1 == len(self) and dir == 'right'):
@@ -449,47 +485,9 @@ class mps:
             self._orth_centre = None
         #self._tensors[i] = np.einsum('ij, ajb -> aib', M, self._tensors[i])
 
-    #function for applying a two site tensor across a bond and swapping the resultant output indices of the bond
-    def apply_bond_tensor_and_swap(self, M, bi, dir='right', tol=None, nbond=None, optol=None):
-        bi = mapint(bi, self.nbonds())
-
-        mi = None
-        #if we are going the 'right' direction then we have bi as the first index and bi+1 as the second index
-        if dir == 'right':
-            mi = [bi, bi+1]
-        else:
-            mi = [bi+1, bi]
-
-        #now we have set up the state in a suitable form for constructing the 
-        if(self._orth_centre == None):
-            self.orthogonalise()
-
-        self.shift_orthogonality(bi)
-        dims = [self.local_dimension(m) for m in mi]
-
-        #now we convert the n-site object into an MPO
-        Mt, inds, ds = permute_nsite_dims(M, mi, dims)
-        Mp = nsite_mpo(Mt, ds, order='clockwise', tol=optol)
-
-        i = bi
-        j = bi+1
-
-        c=0 
-        for ind in range(i, j+1):
-            self._tensors[ind] = mps.apply_MPO_node(Mp[c], self._tensors[ind], order='clockwise')
-            c = c+1
-
-        Mv = np.transpose(self.contract_bond(bi), axes=[0, 2, 1, 3])
-        self.decompose_two_site(Mv, bi, dir=dir, tol=tol, nbond=nbond)
-        if dir  == 'right':
-            self._orth_centre = bi+1
-        else:
-            self._orth_centre = bi
-
     #performs a swap operation of physical indices across a bond
     def swap_bond_indices(self, bi, dir='right', tol=None, nbond=None):
         #ensure that the orthogonality centre is at site bi (the left most of the two sites involved in the bond)
-        bi = mapint(bi, self.nbonds())
         self.shift_orthogonality(bi)
         M = np.transpose(self.contract_bond(bi), axes=[0, 2, 1, 3])
         self.decompose_two_site(M, bi, dir=dir, tol=tol, nbond=nbond)
@@ -550,11 +548,45 @@ class mps:
         d = ret.shape
         return (ret.reshape((d[0]*d[1], d[2], d[3]*d[4])))
 
-    #function for applying a general two-site operator to the MPS
-    def apply_two_site(self, M, i, j, method='naive', tol = None, nbond = None, optol=None):
-        self._apply_nsite(M, [i, j], method=method, tol=tol, nbond=nbond, optol=optol)
+    def zipup_left(A, M, tol=None, order='mpo'):
+        dims = A.shape
+        C = mps.apply_MPO_node(M, A, order=order)
+        Cs = C.shape
+        #now we swap the tensors around so that up and left point to the right 
+        C = C.reshape((Cs[0]*Cs[1], Cs[2]))
+        #compute the svd of the c matrix pointing towards the right
 
-    def _apply_nsite(self, M, inds, method='naive', tol = None, nbond = None, optol = None):
+        Q, S, Vh = np.linalg.svd(C, full_matrices=False, compute_uv=True)
+
+        nsvd = determine_truncation(S, tol = tol, is_ortho=True)
+
+        S = np.diag(S[:nsvd])
+        Vh = Vh[:nsvd, :]
+
+        return Q[:, :nsvd].reshape((Cs[0], Cs[1], nsvd)), S@Vh
+
+    def zipup_internal(A, M, R, tol=None, order='mpo'):
+        d = A.shape
+        B = mps.apply_MPO_node(M, A, order=order)
+        C = np.tensordot(R, B, axes=([1], [0]))
+        #C = np.einsum('ij, jkl -> ikl', R, B)
+        Cs = C.shape
+
+        C = C.reshape((Cs[0]*Cs[1], Cs[2]))
+        Q, S, Vh = np.linalg.svd(C, full_matrices=False, compute_uv=True)
+        nsvd = determine_truncation(S, tol = tol, is_ortho=True)
+
+        S = np.diag(S[:nsvd])
+        Vh = Vh[:nsvd, :]
+
+        return Q[:, :nsvd].reshape((Cs[0], Cs[1], nsvd)), S@Vh
+
+
+    #function for applying a general two-site operator to the MPS
+    def apply_two_site(self, M, i, j, method='naive', tol = None, nbond = None, optol=None, reorthogonalise=True):
+        self._apply_nsite(M, [i, j], method=method, tol=tol, nbond=nbond, optol=optol, reorthogonalise=reorthogonalise)
+
+    def _apply_nsite(self, M, inds, method='naive', tol = None, nbond = None, optol = None, reorthogonalise = True):
         mi = [mapint(x, len(self)) for x in inds]
     
         if len(mi) > len(self):
@@ -600,29 +632,124 @@ class mps:
                     d = self._tensors[ind].shape
                     self._tensors[ind] = mps.apply_MPO_node(identity_pad_mpo(nbd, d[1], order='clockwise'), self._tensors[ind], order='clockwise')
 
-            self.shift_orthogonality(j)
+            if(reorthogonalise):
+                self.shift_orthogonality(j)
 
-            #and shift back to the original orthogonality centre truncating all bonds
-            self.shift_orthogonality(i, tol=tol, nbond=nbond)
+                #and shift back to the original orthogonality centre truncating all bonds
+                self.shift_orthogonality(i, tol=tol, nbond=nbond)
+            else:
+                self._orth_center = None
 
         else:
             raise ValueError("Invalid two site mpo mps contraction scheme.")
 
 
     #function for applying a general two-site operator to the MPS
-    def apply_nsite(self, M, inds, method='naive', tol = None, nbond = None, optol=None):
+    def apply_nsite(self, M, inds, method='naive', tol = None, nbond = None, optol=None, reorthogonalise=True):
         if isinstance(inds, int):
             self.apply_one_site(M, inds)
         elif isinstance(inds, list):
             if len(inds) == 1:
                 self.apply_one_site(M, inds[0])
             else:
-                self._apply_nsite(M, inds, method=method, tol=tol, nbond=nbond, optol=optol)
+                self._apply_nsite(M, inds, method=method, tol=tol, nbond=nbond, optol=optol, reorthogonalise=reorthogonalise)
         else:
             raise RuntimeError("Invalid index object passed to apply_nsite.")
 
+
+
+    def apply_MPO_naive(self, M, tol = None, nbond = None, reorthogonalise = True):
+        check_compatible(self, M, mps, mpo)
+        for i in range(self.nsites()):
+            self._tensors[i] = mps.apply_MPO_node(M[i], self._tensors[i])
+    
+        if(reorthogonalise):
+            self.truncate(tol, nbond)
+        else:
+            self._orth_center = None
+
+    def apply_MPO_zipup(self, M, tol=None, nbond=None):
+        check_compatible(self, M, mps, mpo)
+
+        self.shift_orthogonality(0)
+        self._tensors[0], R = mps.zipup_left(self._tensors[0], M[0], tol=tol)
+
+        for ind in range(1, len(self)-1):
+            self._orth_centre = ind
+            self._tensors[ind], R = mps.zipup_internal(self._tensors[ind], M[ind], R, tol=tol)
+
+        self._orth_centre = len(self)-1
+        B = mps.apply_MPO_node(M[-1], self._tensors[-1])
+        self._tensors[-1] = np.tensordot(R, B, axes=([0], [0]))
+        #self._tensors[-1] = np.einsum('ij, jkl -> ikl', R, B)
+        self.shift_orthogonality(0, tol=tol, nbond=nbond)
+
+
+    def apply_MPO(self, M, method="naive", tol = None, nbond = None, reorthogonalise=True):
+        if method == "naive":
+            self.apply_MPO_naive(M, tol=tol, nbond=nbond, reorthogonalise=reorthogonalise)
+
+        elif method == "zipup":
+            if(len(self) == 1):
+                raise RuntimeError("zipup has not been implemented to handle length 1 mps.")
+            self.apply_MPO_zipup(M, tol=tol, nbond=nbond)
+        else:
+            raise RuntimeError("method not recognised.")
+
+    #function for applying a two site tensor across a bond and swapping the resultant output indices of the bond
+    def apply_bond_tensor_and_swap(self, M, bi, dir='right', tol=None, nbond=None, optol=None):
+        bi = mapint(bi, self.nbonds())
+
+        mi = None
+        #if we are going the 'right' direction then we have bi as the first index and bi+1 as the second index
+        if dir == 'right':
+            mi = [bi, bi+1]
+        else:
+            mi = [bi+1, bi]
+
+        #now we have set up the state in a suitable form for constructing the 
+        if(self._orth_centre == None):
+            self.orthogonalise()
+
+        self.shift_orthogonality(bi)
+        dims = [self.local_dimension(m) for m in mi]
+
+        #now we convert the n-site object into an MPO
+        Mt, inds, ds = permute_nsite_dims(M, mi, dims)
+        Mp = nsite_mpo(Mt, ds, order='clockwise', tol=optol)
+
+        i = bi
+        j = bi+1
+
+        c=0 
+        for ind in range(i, j+1):
+            self._tensors[ind] = mps.apply_MPO_node(Mp[c], self._tensors[ind], order='clockwise')
+            c = c+1
+
+        Mv = np.transpose(self.contract_bond(bi), axes=[0, 2, 1, 3])
+        self.decompose_two_site(Mv, bi, dir=dir, tol=tol, nbond=nbond)
+        if dir  == 'right':
+            self._orth_centre = bi+1
+        else:
+            self._orth_centre = bi
+
+    #performs a swap operation of physical indices across a bond
+    def swap_bond_indices(self, bi, dir='right', tol=None, nbond=None):
+        #ensure that the orthogonality centre is at site bi (the left most of the two sites involved in the bond)
+        bi = mapint(bi, self.nbonds())
+        self.shift_orthogonality(bi)
+        M = np.transpose(self.contract_bond(bi), axes=[0, 2, 1, 3])
+        self.decompose_two_site(M, bi, dir=dir, tol=tol, nbond=nbond)
+        if dir  == 'right':
+            self._orth_centre = bi+1
+        else:
+            self._orth_centre = bi
+
+
     def apply_operator(self, op, method="naive", tol=None, nbond=None, optol=None):
-        if isinstance(op, dict):
+        if isinstance(op, mpo):
+            self.apply_MPO(op, method=method, tol=tol, nbond=nbond)
+        elif isinstance(op, dict):
             if not "op" in op:
                 raise ValueError("Invalid dictionary for applying operator")
             else:
@@ -768,6 +895,110 @@ class mps:
             else:
                 return mps.matrix_element(B, MPO, A)
 
+    def save(self, filename, tag="psi", ftype='h5'):
+        if ftype == 'h5':
+            import h5py
+            with h5py.File(filename, 'w') as f:
+                grp = f.create_group(tag)
+                for i, A in enumerate(self._tensors):
+                    grp.create_dataset(str(i), shape=A.shape, data=A, compression='gzip')
+                grp.attrs['orthcentre'] = self._orth_centre
+                grp.attrs['conj'] = self._is_conjugated
+                grp.attrs['valid'] = self._is_valid
+                
+        elif ftype == 'json':
+            import json
+            with open(filename, 'w') as f:
+                json.dump({tag :  {"Ar" : [np.real(x).tolist() for x in self._tensors], "Ai" : [np.imag(x).tolist() for x in self._tensors], "orthcentre" : self._orth_centre, "conj" : self._is_conjugated, "valid" : self._is_valid}}, f)
+
+    def load(self, filename, tag="psi", ftype = 'h5'):
+        if ftype == 'h5':
+            import h5py
+            with h5py.File(filename, 'r') as f:
+                self._tensors = [np.array(f[tag][str(i)]) for i in range(len(f[tag]))]
+                self._orth_centre = f[tag].attrs['orthcentre']
+                self._is_conjugated = f[tag].attrs['conj']
+                self._is_valid = f[tag].attrs['valid']
+        elif ftype == 'json':
+            import json
+            with open(filename, 'r') as f:
+                data = json.load(f)
+                dv = data[tag]
+
+                self._tensors = [(np.array(ar) + 1.0j*np.array(ai)) for ar, ai in zip(dv["Ar"], dv["Ai"])]
+                self._orth_centre = dv["orthcentre"]
+                self._is_conjugated = dv["conj"]
+                self._is_valid = dv["valid"]
+
+    #returns the subsystem density matrix between sites i and j
+    def subsystem_density(self, i, j): 
+        i = mapint(i, self.nsites())
+        j = mapint(j, self.nsites())
+        if  i > j:
+            t = j
+            j = i
+            i = t
+        self.shift_orthogonality(Nl)                           
+        chil = A[Nl].shape[0]                               
+        chir = A[Nr-1].shape[2]                             
+        t = np.reshape(np.identity(chil, dtype=A.dtype), (1, 1, chil, chil)) 
+        for x in range(i, j):                                 
+            temp = np.tensordot(t, self._tensors[x], axes=([2], [0]))       
+            t2 = np.transpose(np.tensordot(temp, np.conj(self._tensors[x]), axes=([2], [0])), axes=[0, 2, 1, 4, 3, 5])                  
+            t2s = t2.shape                                      
+            t = t2.reshape((t2s[0]*t2s[1], t2s[2]*t2s[3], t2s[4], t2s[5]))   
+        return np.tensordot(t, np.identity(chir, dtype=A.dtype), axes=([2, 3], [0, 1]))  
+
+
+    def mutual_information(self, i, j):
+        i = mapint(i, self.nsites())
+        j = mapint(j, self.nsites())
+        if i == j:
+            return 0
+        if  i > j:
+            t = j
+            j = i
+            i = t
+
+        #now we have i < j lets set up the mutual information calculation
+
+        #shift the orthogonality centre to i.  This means that all of the tensor network to the left of i is trivial, similarly so is all of the network to the right of j
+        self.shift_orthogonality(i)
+
+        #now lets build the reduced density operator of the two sitse
+        rhoij = None
+        #if site i neighbours site j - then it is trivial to construct this element
+        if i + 1 == j:
+            M = self.contract_bond(i)
+            rhoij = np.tensordot(M, np.conj(M), axes= ([0, 3], [0, 3]))
+        #if site i and j are not neighbours then we will need to contract the intermediate contracted indices together until we connect the two sites
+        else:
+            t = np.transpose(np.tensordot(self._tensors[i], np.conj(self._tensors[i]), axes=([0], [0])), axes=[0, 2, 1, 3])
+            for k in range(i+1, j):
+                t2 = np.tensordot(t, self._tensors[k], axes=([2], [0]))
+                t = np.tensordot(t2, np.conj(self._tensors[k]), axes=([2, 3], [0, 1]))
+
+            #now finally contract on the j tensors to finish everything off
+            t2 = np.tensordot(t, self._tensors[j], axes=([2], [0]))
+            rhoij = np.transpose(np.tensordot(t2, np.conj(self._tensors[j]), axes=([2, 4], [0, 2])), axes=[0, 2, 1, 3])
+
+
+        rhoi = np.einsum('mini -> mn', rhoij)
+        rhoj = np.einsum('imin -> mn', rhoij)
+
+        rs = rhoij.shape
+        rhoij = rhoij.reshape((rs[0]*rs[1], rs[2]*rs[3]))
+
+        wij, Vij = np.linalg.eigh(rhoij)
+        wi, Vi = np.linalg.eigh(rhoi)
+        wj, Vj = np.linalg.eigh(rhoj)
+
+        Sij = - np.sum(wij*np.log(wij))
+        Si = - np.sum(wi*np.log(wi))
+        Sj = - np.sum(wj*np.log(wj))
+
+        return Si+Sj-Sij
+
 
 def overlap(A, B):
     return mps.overlap(A, B)
@@ -777,4 +1008,94 @@ def matrix_element(A, M, B):
 
 def contract(A, B=None, MPO=None):
     return mps.contract(A, B=B, MPO=MPO)
+
+
+#implement MPS unit tests to ensure that the implementations work correctly
+
+    #def svd_external_bond(self, dir='right', tol = 1e-15):
+    #    if not self.is_valid():
+    #        raise RuntimeError("The object does not represent a valid MPS.  Unable to perform transformation operations to the MPS.")
+
+    #    #if dir == 'right' we need to reshape and svd the left tensor
+    #    if dir == 'right':
+    #        il = self.nbonds()
+    #        dims = self._tensors[-1].shape
+    #        A = self._tensors[il].reshape((dims[0]*dims[1], dims[2]))
+
+    #        Q, S, Vh = np.linalg.svd(A, full_matrices=False, compute_uv=True)
+
+    #        nsvd = len(S)
+
+    #        Q = Q[:, :nsvd]
+    #        S = S[:nsvd]
+    #        Vh = Vh[:nsvd, :]
+
+    #        Sinv = S
+    #        for i in range(nsvd):
+    #            if(S[i] > tol):
+    #                Sinv[i] = 1.0/S[i]
+    #            else:
+    #                Sinv[i] = 0
+    #        QS = Q @ np.diag(S)
+    #        VS = np.diag(S) @ Vh
+
+    #        #check to see if we truncate the bond in any way
+
+    #        self._tensors[il] = QS.reshape((dims[0], dims[1], nsvd))
+    #        return Sinv, VS
+
+
+    #    #otherwise we reshape and svd the right tensor
+    #    elif dir == 'left':
+    #        ir = 0
+    #        dims = self._tensors[ir].shape
+    #        B = self._tensors[ir].reshape((dims[0], dims[1]*dims[2]))
+
+    #        Q, S, Vh = np.linalg.svd(B, full_matrices=False, compute_uv=True, lapack_driver='gesvd')
+
+    #        nsvd = len(S)
+
+    #        Q = Q[:, :nsvd]
+    #        S = S[:nsvd]
+    #        Vh = Vh[:nsvd, :]
+
+    #        Sinv = S
+    #        for i in range(nsvd):
+    #            if(S[i] > tol):
+    #                Sinv[i] = 1.0/S[i]
+    #            else:
+    #                Sinv[i] = 0
+    #        QS = Q @ np.diag(S)
+    #        VS = np.diag(S) @ Vh
+
+    #        #check to see if we truncate the bond in any way
+
+    #        self._tensors[ir] = VS.reshape( (nsvd, dims[1], dims[2]))
+
+    #        return Sinv, QS
+    #    else:
+    #        ValueError("Invalid dir argument")
+
+
+    ##function for applying a matrix to the boundary of an MPS.  This is used for inverse canonical gauge based parallelism of larger MPSs 
+    #def apply_boundary_matrix(self, M, boundary):
+    #    if(boundary == 'left'):
+    #        if(M.shape[1] != self._tensors[0].shape[0]):
+    #            raise RuntimeError("Cannot apply boundary matrix to MPS.")
+
+    #        self._tensors[0] = np.tensordot(M, self._tensors[0], axes=([1], [0]))
+    #        #self._tensors[0] = np.einsum('ij, jab -> iab', M, self._tensors[0])
+    #        if(self._orth_centre != 0):
+    #            self._orth_centre = None
+
+    #    elif(boundary == 'right'):
+    #        if(M.shape[0] != self._tensors[self.nbonds()].shape[2]):
+    #            raise RuntimeError("Cannot apply boundary matrix to MPS.")
+    #        self._tensors[self.nbonds()] = np.tensordot(self._tensors[self.nbonds()], M, axes=([2], [0]))
+    #        #self._tensors[self.nbonds()] = np.einsum('ij, abi -> abj', M, self._tensors[self.nbonds()])
+    #        if(self._orth_centre != self.nbonds()):
+    #            self._orth_centre = None
+
+    #    else:
+    #        raise RuntimeError("Failed to apply boundary matrix.  Boundary type not recognised")
 

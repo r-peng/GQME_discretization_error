@@ -7,7 +7,7 @@ np.set_printoptions(threshold=10000,suppress=True,linewidth=10000)
 plt.rcParams.update({'font.size':16})
 plt.rcParams.update({'figure.figsize':(6.4,4.8)})
 
-dt_min = .005
+dt_min = .0005
 itv = int(dt_min/.0005+1e-6)
 M = int(3/dt_min+1e-6) 
 rhos_ex = [None] * 4
@@ -119,7 +119,7 @@ for (ix1,ix2,typ),(fig,ax),ylab in zip(fnames,figs,ylabs):
         else:
             mksz = 10
         ax.plot([],[],linestyle=ls,color='k',marker=mk,markersize=mksz,label=l)
-    ax.set_xlabel(r'$\Omega t$')
+    ax.set_xlabel(r'$t$')
     ax.set_ylabel(ylab)
     if typ=='err':
         ax.set_xlim(0,2.5)
@@ -129,8 +129,6 @@ for (ix1,ix2,typ),(fig,ax),ylab in zip(fnames,figs,ylabs):
     fig.subplots_adjust(left=0.17, bottom=0.15, right=0.95, top=0.98)
     if typ=='err':
         fig.savefig(f'K_{typ}_{dt_min}.png', dpi=250)
-        #fig.savefig(f'K_{typ}.png', dpi=250)
     else:
-        fig.savefig(f'K{ix1}{ix2}_{typ}_{dt_min}.png', dpi=250)
-        #fig.savefig(f'K{ix1}{ix2}_{typ}.png', dpi=250)
+        fig.savefig(f'K{ix1}{ix2}_{typ}.png', dpi=250)
     plt.close(fig)

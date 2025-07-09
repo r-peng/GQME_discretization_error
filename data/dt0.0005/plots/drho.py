@@ -95,13 +95,13 @@ for dt,color in zip([0.005,.01,0.02,.05,.1,.2],colors):
         plot(U,dt,ax4,ls,color,l)
 
 for ax,fig in zip((ax1,ax2,ax3,ax4),(fig1,fig2,fig3,fig4)):
-    ax.set_xlabel(r'$\Omega t$')
+    ax.set_xlabel(r'$t$')
     ax.set_ylabel(r'$\log_{10}||\Delta\rho||$')
     ax.set_ylim(-7,-.5)
     ax.set_xlim(0,10)
     ax.legend()
     fig.subplots_adjust(left=0.12, bottom=0.12, right=0.97, top=0.98)
-fig1.savefig(f'rho_TTM.png', dpi=250)
+#fig1.savefig(f'rho_TTM.png', dpi=250)
 fig2.savefig(f'rho_TTM_K.png', dpi=250)
 fig3.savefig(f'rho_TTM_K2.png', dpi=250)
 fig4.savefig(f'rho_MPDI.png', dpi=250)

@@ -7,25 +7,33 @@ def mapint(i, N):
         raise IndexError("The index (%d) is out of range." % i)
     return i
 
-def determine_truncation(S, tol = None, nbond = None, chimin = None, is_ortho = True):
+def determine_truncation(S, tol = None, nbond = None, chimin = None, is_ortho = True, truncation_mode='svd'):
     nsvd = S.shape[0]
 
     #we will only allow for truncation if we are currently at the orthogonality centre
     if is_ortho:
-        if not nbond == None:
+        if not nbond is None:
             if nsvd > nbond:
                 nsvd = nbond
 
-        if not tol == None:
-            #print(np.amax(S), tol)
-            #print(S/np.amax(S))
-            ntrunc = np.argmax(S < tol*np.amax(S))
+        if not tol is None:
+            ntrunc = 0
+            if truncation_mode == 'weights':
+                L = np.cumsum(np.flip(S*S/np.sum(S*S)))
+                ind = np.searchsorted(L, tol)
+                ntrunc = len(L)-ind
+            elif truncation_mode == 'svd':
+                ntrunc = np.argmax(S < tol*np.amax(S))
+            else:
+                raise RuntimeError("Failed to recognise truncation mode option")
+            ##print(np.amax(S), tol)
+            ##print(S/np.amax(S))
             if(ntrunc == 0):
                 ntrunc = nsvd
             if nsvd > ntrunc:
                 nsvd = ntrunc
 
-        if not chimin == None:
+        if not chimin is None:
             if nsvd < chimin:
                 nsvd = chimin
 
@@ -75,6 +83,9 @@ def permute_nsite_dims(M, ind, ds):
     
     Mtens = np.transpose(M.reshape((*ds, *ds)), axes=perms)
     return Mtens, pind, pdms
+
+
+
 
 
 def nsite_tensor_to_mpo(M, d):
@@ -152,6 +163,12 @@ def update_mps_ortho_centre(il, ir, oc, dir):
     return oc
 
 
+def schmidt_spectrum(M):
+    dims = M.shape
+    A = M.reshape((dims[0]*dims[1], dims[2]))
+    return np.linalg.svd(A, full_matrices=False, compute_uv=False)
+
+
 def local_canonical_form(Mi, Mj, dir, il, oc, tol = None, nbond = None, chimin = None):
     #if dir == 'right' we need to reshape and svd the left tensor
     if dir == 'right':
@@ -159,7 +176,7 @@ def local_canonical_form(Mi, Mj, dir, il, oc, tol = None, nbond = None, chimin =
         A = Mi.reshape((dims[0]*dims[1], dims[2]))
     
         Q = None; R = None
-        if tol == None and nbond == None:
+        if tol is None and nbond is None:
             Q, R = np.linalg.qr(A, mode='reduced')
     
         else:
@@ -181,7 +198,7 @@ def local_canonical_form(Mi, Mj, dir, il, oc, tol = None, nbond = None, chimin =
         B = Mj.reshape((dims[0], dims[1]*dims[2]))
     
         Vh = None; R = None
-        if tol == None and nbond == None:
+        if tol is None and nbond is None:
             U, L = np.linalg.qr(B.T, mode='reduced')
             Vh = U.T
             R = L.T
